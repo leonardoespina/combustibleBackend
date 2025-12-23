@@ -10,7 +10,7 @@ const Vehiculo = sequelize.define(
       autoIncrement: true,
     },
     placa: {
-      type: DataTypes.STRING(10),
+      type: DataTypes.STRING(20),
       allowNull: false,
       unique: false, // Las placas son únicas
     },

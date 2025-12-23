@@ -112,7 +112,13 @@ exports.obtenerListaDispensadores = async (req, res) => {
       ],
       attributes: ["id_dispensador", "nombre", "odometro_actual"],
     });
-    res.json(lista);
+
+    const resultado = lista.map((d) => ({
+      ...d.toJSON(),
+      tipo_combustible: d.TanqueAsociado?.tipo_combustible,
+    }));
+
+    res.json(resultado);
   } catch (error) {
     res.status(500).json({ msg: "Error al listar" });
   }
