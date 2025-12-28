@@ -177,8 +177,9 @@ exports.actualizarTanque = async (req, res) => {
     if (tipo_combustible) tanque.tipo_combustible = tipo_combustible;
     if (tipo_jerarquia) tanque.tipo_jerarquia = tipo_jerarquia;
     if (unidad_medida) tanque.unidad_medida = unidad_medida;
-    if (capacidad_maxima) tanque.capacidad_maxima = capacidad_maxima;
-    if (nivel_alarma) tanque.nivel_alarma = nivel_alarma;
+    if (capacidad_maxima !== undefined)
+      tanque.capacidad_maxima = capacidad_maxima;
+    if (nivel_alarma !== undefined) tanque.nivel_alarma = nivel_alarma;
     if (radio !== undefined) tanque.radio = radio;
     if (largo !== undefined) tanque.largo = largo;
     if (longitud !== undefined) tanque.longitud = longitud;
@@ -187,7 +188,7 @@ exports.actualizarTanque = async (req, res) => {
       tanque.tabla_aforo = tabla_aforo;
     }
     if (estado) tanque.estado = estado;
-    if (nivel_actual) tanque.nivel_actual = nivel_actual;
+    if (nivel_actual !== undefined) tanque.nivel_actual = nivel_actual;
 
     tanque.fecha_modificacion = new Date();
     await tanque.save();

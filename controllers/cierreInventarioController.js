@@ -97,22 +97,33 @@ exports.generarActaDeCierre = async (req, res) => {
       );
 
       // C. Despachos (Salidas)
+      // Buscamos dispensadores asociados actualmente (para retrocompatibilidad con registros viejos)
       const dispensadores = await Dispensador.findAll({
         where: { id_tanque_asociado: tanque.id_tanque },
       });
       const idsDispensadores = dispensadores.map((d) => d.id_dispensador);
 
-      let despachosPendientes = [];
-      if (idsDispensadores.length > 0) {
-        despachosPendientes = await Despacho.findAll({
-          where: {
-            id_dispensador: { [Op.in]: idsDispensadores },
-            estado: "PROCESADO",
-            id_cierre: null, // <--- LA CLAVE
-          },
-          include: [{ model: Vehiculo, attributes: ["es_generador"] }],
-        });
-      }
+      // ESTRATEGIA HÍBRIDA DE BÚSQUEDA:
+      // 1. Despachos Nuevos: Tienen id_tanque grabado. Buscamos directo por id_tanque.
+      // 2. Despachos Viejos: Tienen id_tanque NULL. Buscamos por id_dispensador (si el dispensador sigue asociado a este tanque).
+      const despachosPendientes = await Despacho.findAll({
+        where: {
+          estado: "PROCESADO",
+          id_cierre: null,
+          [Op.or]: [
+            { id_tanque: tanque.id_tanque }, // Nuevo método: Preciso y a prueba de cambios de dispensador
+            {
+              // Método Legacy: Solo si id_tanque es NULL y el dispensador coincide
+              id_tanque: null,
+              id_dispensador:
+                idsDispensadores.length > 0
+                  ? { [Op.in]: idsDispensadores }
+                  : -1, // -1 para que no traiga nada si no hay dispensadores
+            },
+          ],
+        },
+        include: [{ model: Vehiculo, attributes: ["es_generador"] }],
+      });
 
       const consumoVehiculosNormales = despachosPendientes
         .filter(
@@ -273,12 +284,51 @@ exports.obtenerDatosParaActaPDF = async (req, res) => {
     const primerRegistro = cierresDelGrupo[0];
     const inspector = primerRegistro.Usuario;
 
-    // Encontrar el cierre del tanque principal de gasoil (si existe)
-    const cierrePrincipalGasoil = cierresDelGrupo.find(
+    // =======================================================================
+    // ESTRATEGIA DINÁMICA DE SELECCIÓN DE TANQUE PRINCIPAL (PROTAGONISTA)
+    // =======================================================================
+
+    // 1. Identificar el Tanque Principal configurado en BD
+    const cierrePrincipalDB = cierresDelGrupo.find(
       (c) =>
         c.Tanque.tipo_combustible === "GASOIL" &&
         c.Tanque.tipo_jerarquia === "PRINCIPAL"
     );
+
+    // 2. Identificar los Tanques Auxiliares
+    const cierresAuxiliares = cierresDelGrupo.filter(
+      (c) =>
+        c.Tanque.tipo_combustible === "GASOIL" &&
+        c.Tanque.tipo_jerarquia !== "PRINCIPAL"
+    );
+
+    // 3. Selección del Protagonista:
+    // Por defecto el Principal DB. Si está inactivo (consumo 0) y un Auxiliar trabajó, el Auxiliar toma el mando.
+    let cierreProtagonista = cierrePrincipalDB;
+
+    const principalInactivo =
+      !cierrePrincipalDB ||
+      parseFloat(cierrePrincipalDB.consumo_despachos_total || 0) === 0;
+
+    if (principalInactivo) {
+      // Buscamos un auxiliar que sí haya trabajado (tenga despachos)
+      const auxiliarActivo = cierresAuxiliares.find(
+        (c) => parseFloat(c.consumo_despachos_total || 0) > 0
+      );
+
+      // Si encontramos uno activo, ese será el protagonista del reporte
+      if (auxiliarActivo) {
+        cierreProtagonista = auxiliarActivo;
+      }
+    }
+
+    // Calcular el consumo total de planta (merma) de TODOS los tanques de GASOIL (Esto se mantiene global)
+    // OJO: El usuario pidió "comportarse igual que el principal", implicando que solo mostremos los datos del protagonista.
+    // Sin embargo, consumo_planta suele ser un dato global de interés. Mantendremos la lógica global para Planta,
+    // pero los datos de inventario (inicio, fin, consumo vehiculos) serán del PROTAGONISTA.
+
+    // Corrección según requerimiento: "su saldo inicial y su saldo total".
+    // Esto implica que la sección principal refleja SOLO al protagonista.
 
     // Construir la estructura del Acta
     const actaPDF = {
@@ -290,14 +340,16 @@ exports.obtenerDatosParaActaPDF = async (req, res) => {
         inspector_servicio: `${inspector.nombre} ${inspector.apellido}`,
         fecha_cierre: primerRegistro.fecha_cierre,
       },
-      seccion_principal: cierrePrincipalGasoil
+      seccion_principal: cierreProtagonista
         ? {
-            nivel_inicio: cierrePrincipalGasoil.saldo_inicial_real,
-            consumo_planta: cierrePrincipalGasoil.consumo_planta_merma,
-            consumo_total_despachos:
-              cierrePrincipalGasoil.consumo_despachos_total,
-            desglose_consumo: cierrePrincipalGasoil.snapshot_desglose_despachos,
-            total_disponible: cierrePrincipalGasoil.saldo_final_real,
+            // Datos exclusivos del Tanque que operó (Principal o Auxiliar promovido)
+            nivel_inicio: cierreProtagonista.saldo_inicial_real,
+            consumo_planta: cierreProtagonista.consumo_planta_merma,
+            consumo_total_despachos: cierreProtagonista.consumo_despachos_total,
+            desglose_consumo: cierreProtagonista.snapshot_desglose_despachos,
+            total_disponible: cierreProtagonista.saldo_final_real,
+            // Agregamos el nombre para que el reporte sepa quién es el protagonista
+            nombre_tanque: cierreProtagonista.Tanque.nombre,
           }
         : null,
       inventario_gasoil: {

@@ -66,6 +66,14 @@ const Despacho = sequelize.define(
     // --- AUDITORÍA ---
     id_almacenista: { type: DataTypes.INTEGER, allowNull: false },
     id_usuario: { type: DataTypes.INTEGER, allowNull: false },
+
+    // CAMPO NUEVO: Para soportar cambios de tanque en dispensadores (Gasoil)
+    id_tanque: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "ID del tanque al momento del despacho",
+    },
+
     id_cierre: {
       type: DataTypes.INTEGER,
       allowNull: true, // Nace NULL (Pendiente). Se llena al cerrar.

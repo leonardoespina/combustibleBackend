@@ -131,6 +131,8 @@ exports.registrarDespacho = async (req, res) => {
 
         observacion: observacion || null, // Guardamos la observación si existe
 
+        id_tanque: tanque.id_tanque, // <--- CAMPO NUEVO: Guardamos el tanque origen
+
         id_almacenista,
         id_usuario: req.usuario.id_usuario,
       },
