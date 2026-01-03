@@ -154,7 +154,11 @@ exports.generarActaDeCierre = async (req, res) => {
 
           saldo_inicial_real: saldoInicial,
           total_entradas_cisterna: totalEntradas,
-          consumo_planta_merma: totalAjustes + consumoGeneradores,
+          consumo_planta_merma:
+            saldoInicial +
+            totalEntradas -
+            totalDespachado -
+            parseFloat(tanque.nivel_actual),
           consumo_despachos_total: totalDespachado,
           saldo_final_real: parseFloat(tanque.nivel_actual), // Foto actual
 
@@ -322,13 +326,21 @@ exports.obtenerDatosParaActaPDF = async (req, res) => {
       }
     }
 
-    // Calcular el consumo total de planta (merma) de TODOS los tanques de GASOIL (Esto se mantiene global)
-    // OJO: El usuario pidió "comportarse igual que el principal", implicando que solo mostremos los datos del protagonista.
-    // Sin embargo, consumo_planta suele ser un dato global de interés. Mantendremos la lógica global para Planta,
-    // pero los datos de inventario (inicio, fin, consumo vehiculos) serán del PROTAGONISTA.
+    // Calcular el consumo total de planta (merma) de TODOS los tanques de GASOIL
+    const totalConsumoPlantaGasoil = cierresDelGrupo
+      .filter((c) => c.Tanque.tipo_combustible === "GASOIL")
+      .reduce((sum, c) => sum + parseFloat(c.consumo_planta_merma || 0), 0);
 
-    // Corrección según requerimiento: "su saldo inicial y su saldo total".
-    // Esto implica que la sección principal refleja SOLO al protagonista.
+    // NUEVO REQUERIMIENTO: "necesito que el Stock_total pase a ser el nivel_inicio"
+    // Calculamos la suma de los saldos iniciales de TODOS los tanques de Gasoil
+    const saldoInicialTotalGasoil = cierresDelGrupo
+      .filter((c) => c.Tanque.tipo_combustible === "GASOIL")
+      .reduce((sum, c) => sum + parseFloat(c.saldo_inicial_real || 0), 0);
+
+    // Calculamos la suma de los saldos finales de TODOS los tanques de Gasoil (Stock Total)
+    const saldoFinalTotalGasoil = cierresDelGrupo
+      .filter((c) => c.Tanque.tipo_combustible === "GASOIL")
+      .reduce((sum, c) => sum + parseFloat(c.saldo_final_real || 0), 0);
 
     // Construir la estructura del Acta
     const actaPDF = {
@@ -342,13 +354,18 @@ exports.obtenerDatosParaActaPDF = async (req, res) => {
       },
       seccion_principal: cierreProtagonista
         ? {
-            // Datos exclusivos del Tanque que operó (Principal o Auxiliar promovido)
-            nivel_inicio: cierreProtagonista.saldo_inicial_real,
+            // CAMBIO: Ahora mostramos el TOTAL INICIAL de la estación (Suma de todos los tanques)
+            nivel_inicio: saldoInicialTotalGasoil,
+
+            // Consumos del Protagonista (o Total si así se prefiere, pero mantenemos lógica de protagonista para esto)
             consumo_planta: cierreProtagonista.consumo_planta_merma,
             consumo_total_despachos: cierreProtagonista.consumo_despachos_total,
             desglose_consumo: cierreProtagonista.snapshot_desglose_despachos,
-            total_disponible: cierreProtagonista.saldo_final_real,
-            // Agregamos el nombre para que el reporte sepa quién es el protagonista
+
+            // CAMBIO: Mostramos el TOTAL FINAL de la estación (Stock Total Disponible)
+            total_disponible: saldoFinalTotalGasoil,
+
+            // Agregamos el nombre para que el reporte sepa quién es el protagonista de los consumos
             nombre_tanque: cierreProtagonista.Tanque.nombre,
           }
         : null,
@@ -381,7 +398,13 @@ exports.obtenerDatosParaActaPDF = async (req, res) => {
 
         stock_total: cierresDelGrupo
           .filter((c) => c.Tanque.tipo_combustible === "GASOLINA")
-          .reduce((sum, c) => sum + parseFloat(c.saldo_final_real), 0),
+          .reduce(
+            (sum, c) =>
+              sum +
+              parseFloat(c.saldo_final_real) +
+              parseFloat(c.consumo_planta_merma || 0),
+            0
+          ),
 
         consumo_total_despachos: cierresDelGrupo
           .filter((c) => c.Tanque.tipo_combustible === "GASOLINA")

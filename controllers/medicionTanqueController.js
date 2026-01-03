@@ -142,8 +142,8 @@ exports.registrarMedicion = async (req, res) => {
         if (tanque.unidad_medida === "PULGADAS") {
           h_m = medidaVaraNum * 0.0254;
         } else {
-          // Default: CM (pero para cálculo por fórmula, asumimos input en Metros)
-          h_m = medidaVaraNum;
+          // Default: CM
+          h_m = medidaVaraNum / 100;
         }
 
         // L y R se usan directos (ya son metros)
@@ -212,12 +212,12 @@ exports.registrarMedicion = async (req, res) => {
       throw new Error("Fecha u hora inválida.");
 
     // 6. Actualizar Tanque
-    // Para GASOLINA no actualizamos el nivel_actual (se respeta el teórico debido a evaporación)
-    // Para GASOIL (y otros), la medición física ("Vara") actualiza el inventario.
-    const updatePayload = { fecha_modificacion: new Date() };
-    if (tanque.tipo_combustible !== "GASOLINA") {
-      updatePayload.nivel_actual = litrosReales;
-    }
+    // Actualizamos el nivel_actual con la medición física (Vara)
+    // Esto aplica tanto para GASOLINA (para registrar evaporación) como para GASOIL.
+    const updatePayload = {
+      fecha_modificacion: new Date(),
+      nivel_actual: litrosReales,
+    };
 
     await tanque.update(updatePayload, { transaction: t });
 
