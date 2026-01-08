@@ -117,40 +117,59 @@ exports.registrarMedicion = async (req, res) => {
         datosMedicion.medida_vara = parseFloat(medida_vara);
         datosMedicion.litros_reales_aforo = litrosReales;
       } else if (
+        (tanque.tipo_tanque === "RECTANGULAR" ||
+          tanque.tipo_tanque === "CUADRADO") &&
+        tanque.largo > 0 &&
+        tanque.ancho > 0 &&
+        tanque.alto > 0
+      ) {
+        // --- MODO FORMULA RECTANGULAR ---
+        tipoMedicion = "AFORO";
+        const medidaVaraNum = parseFloat(medida_vara);
+        if (isNaN(medidaVaraNum)) {
+          throw new Error("Medida de vara inválida para cálculo rectangular.");
+        }
+
+        let h_m =
+          tanque.unidad_medida === "PULGADAS"
+            ? medidaVaraNum * 0.0254
+            : medidaVaraNum / 100;
+
+        const litrosCalculados = calcularVolumenTanque(
+          h_m,
+          parseFloat(tanque.largo),
+          parseFloat(tanque.ancho),
+          tanque.tipo_tanque,
+          parseFloat(tanque.alto)
+        );
+        litrosReales = parseFloat(litrosCalculados.toFixed(2));
+
+        datosMedicion.medida_vara = medidaVaraNum;
+        datosMedicion.litros_reales_aforo = litrosReales;
+      } else if (
         tanque.largo &&
         tanque.radio &&
         parseFloat(tanque.largo) > 0 &&
         parseFloat(tanque.radio) > 0
       ) {
-        // --- MODO FORMULA (Calculado) ---
-        // Si no hay tabla, pero hay dimensiones, usamos la fórmula matemática
-        tipoMedicion = "AFORO"; // Se registra como AFORO porque es medido con vara
-
+        // --- MODO FORMULA CILINDRICA ---
+        tipoMedicion = "AFORO";
         const medidaVaraNum = parseFloat(medida_vara);
         if (isNaN(medidaVaraNum)) {
-          throw new Error(
-            "El valor para 'medida_vara' es inválido o no fue proporcionado para el cálculo."
-          );
+          throw new Error("Medida de vara inválida para cálculo cilíndrico.");
         }
 
-        const largo = parseFloat(tanque.largo);
-        const radio = parseFloat(tanque.radio);
-        let h_m, L_m, R_m;
+        let h_m =
+          tanque.unidad_medida === "PULGADAS"
+            ? medidaVaraNum * 0.0254
+            : medidaVaraNum / 100;
 
-        // Conversión a Metros según la unidad del tanque
-        // Asumimos que Largo y Radio están en METROS en la BD
-        if (tanque.unidad_medida === "PULGADAS") {
-          h_m = medidaVaraNum * 0.0254;
-        } else {
-          // Default: CM
-          h_m = medidaVaraNum / 100;
-        }
-
-        // L y R se usan directos (ya son metros)
-        L_m = largo;
-        R_m = radio;
-
-        const litrosCalculados = calcularVolumenTanque(h_m, L_m, R_m);
+        const litrosCalculados = calcularVolumenTanque(
+          h_m,
+          parseFloat(tanque.largo),
+          parseFloat(tanque.radio),
+          "CILINDRICO"
+        );
         litrosReales = parseFloat(litrosCalculados.toFixed(2));
 
         datosMedicion.medida_vara = medidaVaraNum;

@@ -17,6 +17,7 @@ exports.obtenerDespachosPendientes = async (req, res) => {
     const despachos = await Despacho.findAll({
       where: {
         id_cierre: null, // Filtro principal: Despachos no cerrados
+        estado: { [Op.ne]: "ANULADO" }, // CORREGIDO: Excluir despachos anulados
       },
       include: [
         {

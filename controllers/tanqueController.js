@@ -20,8 +20,13 @@ exports.crearTanque = async (req, res) => {
     tabla_aforo,
     radio,
     largo,
-    longitud,
+    ancho, // Nuevo campo para tanques rectangulares
+    alto, // Renombrado de longitud para claridad (altura)
+    tipo_tanque, // Nuevo campo para diferenciar el tipo de tanque
   } = req.body;
+
+  // Establecer tipo_tanque por defecto a CILINDRICO si no se especifica
+  const tipoTanqueFinal = tipo_tanque || "CILINDRICO";
 
   try {
     // 1. Validar Código Único
@@ -54,7 +59,36 @@ exports.crearTanque = async (req, res) => {
       return res.status(400).json({ msg: "Tabla de aforo inválida." });
     }
 
-    // 4. Crear
+    // 4. Validar dimensiones según el tipo de tanque
+    if (tipoTanqueFinal === "CILINDRICO") {
+      if (!radio || !largo) {
+        return res.status(400).json({
+          msg: "Para tanques CILINDRICOS se requieren radio y largo.",
+        });
+      }
+      if (ancho !== undefined || alto !== undefined) {
+        return res.status(400).json({
+          msg: "No se deben especificar ancho o alto para tanques CILINDRICOS.",
+        });
+      }
+    } else if (tipoTanqueFinal === "RECTANGULAR") {
+      if (!largo || !ancho || !alto) {
+        return res.status(400).json({
+          msg: "Para tanques RECTANGULARES se requieren largo, ancho y alto.",
+        });
+      }
+      if (radio !== undefined) {
+        return res.status(400).json({
+          msg: "No se debe especificar radio para tanques RECTANGULARES.",
+        });
+      }
+    } else {
+      return res.status(400).json({
+        msg: "Tipo de tanque inválido. Debe ser CILINDRICO o RECTANGULAR.",
+      });
+    }
+
+    // 5. Crear Tanque
     const nuevoTanque = await Tanque.create({
       codigo,
       nombre,
@@ -66,9 +100,12 @@ exports.crearTanque = async (req, res) => {
       nivel_alarma,
       nivel_actual: nivel_actual || 0,
       tabla_aforo: tabla_aforo || null,
-      radio,
-      largo,
-      longitud,
+      // Dimensiones según el tipo de tanque
+      radio: tipoTanqueFinal === "CILINDRICO" ? radio : null,
+      largo: largo,
+      ancho: tipoTanqueFinal === "RECTANGULAR" ? ancho : null,
+      alto: tipoTanqueFinal === "RECTANGULAR" ? alto : null,
+      tipo_tanque: tipoTanqueFinal,
       registrado_por: req.usuario.id_usuario,
       fecha_registro: new Date(),
       fecha_modificacion: new Date(),
@@ -133,7 +170,9 @@ exports.actualizarTanque = async (req, res) => {
     nivel_actual,
     radio,
     largo,
-    longitud,
+    ancho, // Nuevo
+    alto, // Renombrado
+    tipo_tanque, // Nuevo
   } = req.body;
 
   try {
@@ -171,7 +210,48 @@ exports.actualizarTanque = async (req, res) => {
       }
     }
 
-    // Actualizar campos
+    // Determinar el tipo de tanque actual o el que se está intentando establecer
+    const tipoTanqueActualizado = tipo_tanque || tanque.tipo_tanque;
+
+    // Validar y actualizar dimensiones según el tipo de tanque
+    if (tipoTanqueActualizado === "CILINDRICO") {
+      if (radio !== undefined) tanque.radio = radio;
+      else tanque.radio = null; // Si no se provee, nullify
+      if (largo !== undefined) tanque.largo = largo;
+      else tanque.largo = null; // Se usa para cilindricos
+      // Para tanques cilíndricos, ancho y alto deben ser nulos
+      tanque.ancho = null;
+      tanque.alto = null;
+      // Si se intentan enviar dimensiones incorrectas
+      if (
+        (ancho !== undefined && ancho !== null) ||
+        (alto !== undefined && alto !== null)
+      ) {
+        return res.status(400).json({
+          msg: "No se deben especificar ancho o alto para tanques CILINDRICOS.",
+        });
+      }
+    } else if (tipoTanqueActualizado === "RECTANGULAR") {
+      if (largo !== undefined) tanque.largo = largo; // Se usa para rectangulares
+      if (ancho !== undefined) tanque.ancho = ancho;
+      else tanque.ancho = null;
+      if (alto !== undefined) tanque.alto = alto;
+      else tanque.alto = null;
+      // Para tanques rectangulares, radio debe ser nulo
+      tanque.radio = null;
+      // Si se intenta enviar radio incorrecto
+      if (radio !== undefined && radio !== null) {
+        return res.status(400).json({
+          msg: "No se debe especificar radio para tanques RECTANGULARES.",
+        });
+      }
+    } else {
+      return res.status(400).json({
+        msg: "Tipo de tanque inválido. Debe ser CILINDRICO o RECTANGULAR.",
+      });
+    }
+
+    // Actualizar campos generales
     if (nombre) tanque.nombre = nombre;
     if (ubicacion) tanque.ubicacion = ubicacion;
     if (tipo_combustible) tanque.tipo_combustible = tipo_combustible;
@@ -180,9 +260,9 @@ exports.actualizarTanque = async (req, res) => {
     if (capacidad_maxima !== undefined)
       tanque.capacidad_maxima = capacidad_maxima;
     if (nivel_alarma !== undefined) tanque.nivel_alarma = nivel_alarma;
-    if (radio !== undefined) tanque.radio = radio;
-    if (largo !== undefined) tanque.largo = largo;
-    if (longitud !== undefined) tanque.longitud = longitud;
+    // El tipo de tanque se actualiza aquí si se envía en el body
+    if (tipo_tanque) tanque.tipo_tanque = tipo_tanque;
+
     // Permitir explícitamente actualizar tabla_aforo a null o {} (objeto vacío)
     if (tabla_aforo !== undefined) {
       tanque.tabla_aforo = tabla_aforo;
@@ -247,6 +327,11 @@ exports.obtenerListaTanques = async (req, res) => {
         "unidad_medida",
         "nivel_actual",
         "capacidad_maxima",
+        "tipo_tanque", // Incluir el nuevo campo
+        "radio", // Incluir para mostrar dimensiones
+        "largo",
+        "ancho",
+        "alto",
       ],
       order: [["codigo", "ASC"]],
     });

@@ -135,12 +135,16 @@ exports.generarActaDeCierre = async (req, res) => {
         .filter((d) => d.tipo_destino === "BIDON")
         .reduce((acc, d) => acc + parseFloat(d.cantidad_despachada), 0);
 
-      const totalDespachado = consumoVehiculosNormales + consumoBidones;
-
       // Desglose para el Snapshot JSON
       const consumoGeneradores = despachosPendientes
         .filter((d) => d.tipo_destino === "VEHICULO" && d.Vehiculo.es_generador)
         .reduce((acc, d) => acc + parseFloat(d.cantidad_despachada), 0);
+
+      // Se incluye generadores en el total despachado para sacarlo de la merma/consumo planta
+      // Se mantiene una variable 'totalDespachosContable' que incluye generadores
+      // para el cálculo de merma, pero 'consumo_despachos_total' para BD no los incluye.
+      const totalDespachosContable =
+        consumoVehiculosNormales + consumoBidones + consumoGeneradores;
 
       // 3. CREAR EL REGISTRO DE CIERRE
       const nuevoCierre = await CierreInventario.create(
@@ -157,9 +161,10 @@ exports.generarActaDeCierre = async (req, res) => {
           consumo_planta_merma:
             saldoInicial +
             totalEntradas -
-            totalDespachado -
+            totalDespachosContable -
             parseFloat(tanque.nivel_actual),
-          consumo_despachos_total: totalDespachado,
+          // consumo_despachos_total ahora solo incluye vehículos normales y bidones, SIN generadores
+          consumo_despachos_total: consumoVehiculosNormales + consumoBidones,
           saldo_final_real: parseFloat(tanque.nivel_actual), // Foto actual
 
           snapshot_desglose_despachos: {
@@ -360,6 +365,9 @@ exports.obtenerDatosParaActaPDF = async (req, res) => {
             // Consumos del Protagonista (o Total si así se prefiere, pero mantenemos lógica de protagonista para esto)
             consumo_planta: cierreProtagonista.consumo_planta_merma,
             consumo_total_despachos: cierreProtagonista.consumo_despachos_total,
+            // Extraemos consumo generadores del snapshot para mostrarlo explícitamente
+            consumo_generadores:
+              cierreProtagonista.snapshot_desglose_despachos?.generadores || 0,
             desglose_consumo: cierreProtagonista.snapshot_desglose_despachos,
 
             // CAMBIO: Mostramos el TOTAL FINAL de la estación (Stock Total Disponible)

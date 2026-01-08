@@ -55,17 +55,31 @@ const Tanque = sequelize.define(
       defaultValue: 500.0,
       comment: "Nivel mínimo para lanzar alerta de reabastecimiento",
     },
+    // Campos de dimensiones (dependiendo del tipo de tanque)
     radio: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: true,
+      allowNull: true, // Relevante para CILINDRICO
     },
     largo: {
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: true,
+      allowNull: true, // Relevante para CILINDRICO y RECTANGULAR (como longitud)
     },
-    longitud: {
+    ancho: {
+      // Nuevo campo para tanques rectangulares
       type: DataTypes.DECIMAL(10, 2),
-      allowNull: true,
+      allowNull: true, // Relevante para RECTANGULAR
+    },
+    alto: {
+      // Renombrado de 'longitud' para ser más claro (altura para rectangular, o altura en general)
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true, // Relevante para RECTANGULAR
+    },
+    tipo_tanque: {
+      // Nuevo campo para diferenciar el tipo de tanque
+      type: DataTypes.ENUM("CILINDRICO", "RECTANGULAR"),
+      allowNull: false,
+      defaultValue: "CILINDRICO",
+      comment: "Define la forma geométrica del tanque",
     },
     estado: {
       type: DataTypes.ENUM("ACTIVO", "INACTIVO", "MANTENIMIENTO"),
