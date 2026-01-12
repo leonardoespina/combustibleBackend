@@ -44,6 +44,34 @@ router.post(
   controller.registrarDespacho
 );
 
+router.put(
+  "/:id",
+  [
+    check("cantidad_despachada", "Cantidad Despachada numérica")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === "") return true;
+        return !isNaN(parseFloat(value));
+      }),
+    check("id_vehiculo")
+      .optional()
+      .custom((v) => v === null || !isNaN(v)),
+    check("id_chofer")
+      .optional()
+      .custom((v) => v === null || !isNaN(v)),
+    check("id_gerencia")
+      .optional()
+      .custom((v) => v === null || !isNaN(v)),
+    check("id_almacenista")
+      .optional()
+      .custom((v) => v === null || !isNaN(v)),
+    check("fecha").optional().notEmpty().withMessage("Fecha inválida"),
+    check("hora").optional().notEmpty().withMessage("Hora inválida"),
+    validarCampos,
+  ],
+  controller.editarDespacho
+);
+
 router.delete("/:id", controller.anularDespacho);
 
 module.exports = router;

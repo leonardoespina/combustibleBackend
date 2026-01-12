@@ -163,7 +163,7 @@ exports.obtenerDespachos = async (req, res) => {
   try {
     const result = await paginate(Despacho, req.query, {
       searchableFields: ["numero_ticket"],
-      order: [["fecha_hora", "DESC"]],
+      order: [["id_despacho", "DESC"]],
       include: [
         { model: Dispensador, attributes: ["nombre"] },
         { model: Vehiculo, attributes: ["placa"] },
@@ -189,6 +189,14 @@ exports.anularDespacho = async (req, res) => {
   try {
     const despacho = await Despacho.findByPk(id, { transaction: t });
     if (!despacho) throw new Error("Despacho no encontrado");
+
+    // Validar si el despacho ya está cerrado
+    if (despacho.id_cierre) {
+      throw new Error(
+        "No se puede anular: Este despacho ya pertenece a un cierre de inventario."
+      );
+    }
+
     if (despacho.estado === "ANULADO") throw new Error("Ya está anulado");
 
     const litros = parseFloat(despacho.cantidad_despachada);
@@ -220,5 +228,160 @@ exports.anularDespacho = async (req, res) => {
   } catch (error) {
     await t.rollback();
     res.status(500).json({ msg: "Error al anular" });
+  }
+};
+
+exports.editarDespacho = async (req, res) => {
+  if (req.usuario.tipo_usuario !== "ADMIN") {
+    return res.status(403).json({ msg: "Solo Admin puede editar despachos." });
+  }
+
+  const { id } = req.params;
+  const {
+    numero_ticket,
+    fecha,
+    hora,
+    cantidad_despachada,
+    id_vehiculo,
+    id_chofer,
+    id_gerencia,
+    id_almacenista,
+    observacion,
+  } = req.body;
+
+  const t = await sequelize.transaction();
+
+  try {
+    const despacho = await Despacho.findByPk(id, { transaction: t });
+    if (!despacho) throw new Error("Despacho no encontrado");
+
+    if (despacho.id_cierre) {
+      throw new Error(
+        "No se puede editar: Este despacho ya pertenece a un cierre de inventario."
+      );
+    }
+
+    if (despacho.estado === "ANULADO") {
+      throw new Error("No se puede editar un despacho anulado.");
+    }
+
+    // 1. Si cambia el Ticket, validar que no exista otro igual
+    if (numero_ticket && numero_ticket !== despacho.numero_ticket) {
+      const existeTicket = await Despacho.findOne({
+        where: { numero_ticket },
+        transaction: t,
+      });
+      if (existeTicket) throw new Error("El nuevo número de ticket ya existe.");
+      despacho.numero_ticket = numero_ticket;
+    }
+
+    // 2. Actualizar Fecha/Hora si se proporcionan
+    if (fecha || hora) {
+      // Extraemos fecha y hora actuales del registro si no se proporcionan ambas
+      const fechaActual = despacho.fecha_hora.toISOString().split("T")[0];
+      const horaActual = despacho.fecha_hora
+        .toISOString()
+        .split("T")[1]
+        .substring(0, 5);
+
+      const nuevaFecha = fecha || fechaActual;
+      const nuevaHora = hora || horaActual;
+
+      const fechaHoraCombinada = new Date(`${nuevaFecha}T${nuevaHora}:00`);
+      if (isNaN(fechaHoraCombinada.getTime()))
+        throw new Error("Fecha o hora inválida.");
+
+      despacho.fecha_hora = fechaHoraCombinada;
+    }
+
+    // 3. Manejo de Cantidades e Inventario
+    if (cantidad_despachada !== undefined && cantidad_despachada !== null) {
+      const dispensador = await Dispensador.findByPk(despacho.id_dispensador, {
+        transaction: t,
+      });
+      const tanque = await Tanque.findByPk(dispensador.id_tanque_asociado, {
+        transaction: t,
+      });
+
+      if (!tanque) throw new Error("Tanque no encontrado.");
+
+      const cantidadAnterior = parseFloat(despacho.cantidad_despachada);
+      const cantidadNueva = parseFloat(cantidad_despachada);
+      const diferencia = cantidadNueva - cantidadAnterior;
+
+      if (diferencia > 0 && parseFloat(tanque.nivel_actual) < diferencia) {
+        throw new Error(`Stock insuficiente en tanque para el ajuste.`);
+      }
+
+      await tanque.update(
+        { nivel_actual: parseFloat(tanque.nivel_actual) - diferencia },
+        { transaction: t }
+      );
+
+      await dispensador.update(
+        {
+          odometro_actual: parseFloat(dispensador.odometro_actual) + diferencia,
+        },
+        { transaction: t }
+      );
+
+      despacho.cantidad_despachada = cantidadNueva;
+      despacho.odometro_final =
+        parseFloat(despacho.odometro_previo) + cantidadNueva;
+      despacho.observacion =
+        (observacion || despacho.observacion || "") +
+        ` [Editado Cant: ${cantidadAnterior} -> ${cantidadNueva}]`;
+    } else if (observacion) {
+      despacho.observacion = observacion;
+    }
+
+    // 3. Otros campos (Vehículo, Chofer, Gerencia, Almacenista)
+    if (despacho.tipo_destino === "VEHICULO") {
+      if (id_vehiculo && id_vehiculo !== despacho.id_vehiculo) {
+        const vehiculo = await Vehiculo.findByPk(id_vehiculo);
+        if (!vehiculo) throw new Error("Vehículo inválido.");
+
+        // Validar compatibilidad si el vehículo cambia
+        const tanque = await Tanque.findByPk(despacho.id_tanque);
+        if (tanque && vehiculo.tipoCombustible !== tanque.tipo_combustible) {
+          throw new Error(
+            `Incompatibilidad: Vehículo usa ${vehiculo.tipoCombustible} y el tanque despachó ${tanque.tipo_combustible}`
+          );
+        }
+        despacho.id_vehiculo = id_vehiculo;
+      }
+      if (id_chofer && id_chofer !== despacho.id_chofer) {
+        const chofer = await Chofer.findByPk(id_chofer);
+        if (!chofer) throw new Error("Chofer inválido.");
+        despacho.id_chofer = id_chofer;
+      }
+    } else if (despacho.tipo_destino === "BIDON") {
+      if (id_gerencia && id_gerencia !== despacho.id_gerencia) {
+        const gerencia = await Gerencia.findByPk(id_gerencia);
+        if (!gerencia) throw new Error("Gerencia inválida.");
+        despacho.id_gerencia = id_gerencia;
+      }
+    }
+
+    if (id_almacenista) {
+      const almacenista = await Almacenista.findByPk(id_almacenista);
+      if (!almacenista) throw new Error("Almacenista inválido.");
+      despacho.id_almacenista = id_almacenista;
+    }
+
+    await despacho.save({ transaction: t });
+
+    await t.commit();
+    res.json({
+      msg: "Despacho actualizado exitosamente",
+      despacho,
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error("DEBUG EDITAR DESPACHO ERROR:", error);
+    res.status(400).json({
+      msg: error.message || "Error al editar despacho",
+      debug: error.stack,
+    });
   }
 };
