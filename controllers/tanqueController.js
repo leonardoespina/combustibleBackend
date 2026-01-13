@@ -77,11 +77,11 @@ exports.crearTanque = async (req, res) => {
           msg: "Para tanques RECTANGULARES se requieren largo, ancho y alto.",
         });
       }
-      if (radio !== undefined) {
+      /*if (radio !== undefined) {
         return res.status(400).json({
           msg: "No se debe especificar radio para tanques RECTANGULARES.",
         });
-      }
+      }*/
     } else {
       return res.status(400).json({
         msg: "Tipo de tanque inválido. Debe ser CILINDRICO o RECTANGULAR.",
